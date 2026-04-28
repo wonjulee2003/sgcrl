@@ -27,6 +27,27 @@ flags.DEFINE_string('alg', 'contrastive_cpc', 'Algorithm type, e.g. default is c
 flags.DEFINE_string('env', 'sawyer_bin', 'Environment type, e.g. default is sawyer bin')
 flags.DEFINE_integer('num_steps', 8_000_000, 'Number of steps to run', lower_bound=0)
 flags.DEFINE_bool('sample_goals', False, 'sample the goal position uniformly according to the environment (corresponds to the original contrastive_rl algorithm)')
+flags.DEFINE_enum(
+    'episode_mode',
+    'non_episodic',
+    ['episodic', 'non_episodic'],
+    'Environment boundary mode. episodic resets the simulator at --chunk_steps '
+    'like original SGCRL; non_episodic keeps the simulator running and emits '
+    'fake replay chunk boundaries.')
+flags.DEFINE_integer(
+    'chunk_steps',
+    0,
+    'Optional horizon override. In episodic mode this is the true reset '
+    'horizon; in non_episodic mode this is the fake replay chunk length. '
+    'Use 0 for the environment default.')
+flags.DEFINE_string(
+    'fixed_start',
+    None,
+    'Optional comma-separated point-maze start coordinate, e.g. "5,5".')
+flags.DEFINE_string(
+    'fixed_goal',
+    None,
+    'Optional comma-separated point-maze goal coordinate, e.g. "10,10".')
 flags.DEFINE_integer(
     'maze_traj_snapshot_every',
     1000,
@@ -48,6 +69,36 @@ fixed_goal_dict={'point_Spiral11x11': [np.array([5,5], dtype=float), np.array([1
                       'sawyer_box': np.array([0.0, 0.75, 0.133]),
                       'sawyer_peg': np.array([-0.3, 0.6, 0.0])}
 
+def _parse_coordinate(value):
+  if value is None or value == '':
+    return None
+  if isinstance(value, (list, tuple)):
+    return np.array(value, dtype=float)
+  try:
+    return np.array([float(piece) for piece in value.split(',')], dtype=float)
+  except ValueError as exc:
+    raise ValueError(
+        f'Could not parse coordinate {value!r}; expected comma-separated '
+        'numbers such as "5,5".') from exc
+
+
+def _fixed_start_end(
+    env_name,
+    fix_goals = False,
+    fixed_start = None,
+    fixed_goal = None):
+  start = _parse_coordinate(fixed_start)
+  goal = _parse_coordinate(fixed_goal)
+  if start is not None or goal is not None:
+    if not env_name.startswith('point_'):
+      raise ValueError('--fixed_start/--fixed_goal are only supported for point_* envs.')
+    if start is None or goal is None:
+      raise ValueError('Pass both --fixed_start and --fixed_goal together.')
+    return [start, goal]
+
+  return fixed_goal_dict[env_name] if fix_goals else None
+
+
 @functools.lru_cache
 def get_env(env_name, start_index, end_index, seed, fix_goals = False, fix_goals_actor = False, use_naive_sampling=False, clock_period=None):
   if fix_goals:
@@ -64,22 +115,28 @@ def get_program(params):
   env_name = params['env_name']
   seed = params['seed']
 
-  config = contrastive.ContrastiveConfig(**params)
+  config_params = dict(params)
+  episode_mode = config_params.pop('episode_mode', 'non_episodic')
+  chunk_steps = config_params.pop('chunk_steps', None)
+  fixed_start = config_params.pop('fixed_start', None)
+  fixed_goal = config_params.pop('fixed_goal', None)
+
+  config = contrastive.ContrastiveConfig(**config_params)
   
   fix_goals = params['fix_goals']
 
-  if fix_goals:
-    fixed_start_end = fixed_goal_dict[env_name]
-  else:
-    fixed_start_end = None
+  fixed_start_end = _fixed_start_end(
+      env_name, fix_goals=fix_goals, fixed_start=fixed_start,
+      fixed_goal=fixed_goal)
     
   env_factory = lambda seed: contrastive_utils.make_environment(  # pylint: disable=g-long-lambda
-      env_name, config.start_index, config.end_index, seed, fixed_start_end = fixed_start_end)
+      env_name, config.start_index, config.end_index, seed,
+      fixed_start_end=fixed_start_end, episode_mode=episode_mode,
+      chunk_steps=chunk_steps)
 
   env_factory_no_extra = lambda seed: env_factory(seed)[0]  # Remove obs_dim.
     
-  environment, obs_dim = get_env(env_name, config.start_index,
-                                 config.end_index, seed, fix_goals = fix_goals)
+  environment, obs_dim = env_factory(seed)
 
   assert (environment.action_spec().minimum == -1).all()
   assert (environment.action_spec().maximum == 1).all()
@@ -91,8 +148,12 @@ def get_program(params):
       use_image_obs=config.use_image_obs,
       hidden_layer_sizes=config.hidden_layer_sizes)
     
+  eval_fixed_start_end = (
+      fixed_start_end if fixed_start_end is not None else fixed_goal_dict[env_name])
   env_factory_fixed_goals = lambda seed: contrastive_utils.make_environment(  # pylint: disable=g-long-lambda
-      env_name, config.start_index, config.end_index, seed, fixed_start_end = fixed_goal_dict[env_name])
+      env_name, config.start_index, config.end_index, seed,
+      fixed_start_end=eval_fixed_start_end, episode_mode=episode_mode,
+      chunk_steps=chunk_steps)
   env_factory_no_extra_fixed_goals = lambda seed: env_factory_fixed_goals(seed)[0]  # Remove obs_dim.
     
   agent = contrastive.DistributedContrastive(
@@ -116,11 +177,17 @@ def main(_):
   #   2D nav: point_{Spiral11x11}
   env_name = FLAGS.env
   print('Using env {}...'.format(env_name))
-  print(
-      'Non-episodic physics: environments are built with '
-      'FakeEpisodeBoundaryWrapper (see actor/worker stdout for '
-      '[sgcrl continuous-episode] lines).',
-      flush=True)
+  if FLAGS.episode_mode == 'non_episodic':
+    print(
+        'Non-episodic physics: environments are built with '
+        'FakeEpisodeBoundaryWrapper (see actor/worker stdout for '
+        '[sgcrl continuous-episode] lines).',
+        flush=True)
+  else:
+    print(
+        'Episodic control: environments reset at the configured horizon '
+        'without FakeEpisodeBoundaryWrapper.',
+        flush=True)
   
   seed_idx = FLAGS.seed
   print('Using random seed {}...'.format(seed_idx))
@@ -132,6 +199,12 @@ def main(_):
       'env_name': env_name,
       # the number of environment steps
       'max_number_of_steps': FLAGS.num_steps,
+      'episode_mode': FLAGS.episode_mode,
+      'chunk_steps': FLAGS.chunk_steps if FLAGS.chunk_steps > 0 else None,
+      'fixed_start': tuple(_parse_coordinate(FLAGS.fixed_start))
+      if FLAGS.fixed_start else None,
+      'fixed_goal': tuple(_parse_coordinate(FLAGS.fixed_goal))
+      if FLAGS.fixed_goal else None,
   }
   # 2. Select an algorithm. The currently-supported algorithms are:
   # contrastive_nce, contrastive_cpc, c_learning, nce+c_learning

@@ -354,7 +354,9 @@ class FakeEpisodeBoundaryWrapper(base.EnvironmentWrapper):
 
 
 def make_environment(env_name, start_index, end_index,
-                     seed, fixed_start_end = None, extra_dim: int = 0):
+                     seed, fixed_start_end = None, extra_dim: int = 0,
+                     episode_mode: str = 'non_episodic',
+                     chunk_steps: Optional[int] = None):
   """Creates the environment.
 
   Args:
@@ -366,6 +368,10 @@ def make_environment(env_name, start_index, end_index,
     extra_dim: backwards-compatibility hook; legacy callers may request
       additional observation features. The current environments do not
       expose these extra features, so the parameter is ignored.
+    episode_mode: either 'episodic' for original reset-on-horizon SGCRL or
+      'non_episodic' for continuous simulator rollouts with fake replay chunks.
+    chunk_steps: optional horizon override. In episodic mode this is the real
+      reset horizon. In non-episodic mode this is the fake replay chunk length.
   Returns:
     env: the environment
     obs_dim: integer specifying the size of the observations, before
@@ -376,6 +382,12 @@ def make_environment(env_name, start_index, end_index,
   if extra_dim:
     print(f"[make_environment] Requested extra_dim={extra_dim}, but the current"
           " environment does not expose additional coordinates; ignoring.")
+  if episode_mode not in ('episodic', 'non_episodic'):
+    raise ValueError(
+        "episode_mode must be 'episodic' or 'non_episodic', got "
+        f"{episode_mode!r}")
+  if chunk_steps is None or chunk_steps <= 0:
+    chunk_steps = max_episode_steps
   goal_indices = obs_dim + obs_to_goal_1d(np.arange(obs_dim), start_index,
                                           end_index)
   indices = np.concatenate([
@@ -383,13 +395,20 @@ def make_environment(env_name, start_index, end_index,
       goal_indices
   ])
   env = gym_wrapper.GymWrapper(gym_env)
-  # Use very large step limit for continuous episode (no actual resets during training)
-  env = step_limit.StepLimitWrapper(env, step_limit=12_000_000)
-  # Add fake episode boundaries to chunk continuous episode into trajectories
-  env = FakeEpisodeBoundaryWrapper(
-      env, steps_per_chunk=max_episode_steps, env_label=env_name)
-  # Preserve the original episode length for config, not the large step limit
-  env._step_limit = max_episode_steps
+  if episode_mode == 'episodic':
+    print(
+        f'[sgcrl episodic pid={os.getpid()} {env_name}] '
+        f'original reset-on-horizon mode: step_limit={chunk_steps}.',
+        flush=True)
+    env = step_limit.StepLimitWrapper(env, step_limit=chunk_steps)
+  else:
+    # Use very large step limit for continuous episode (no actual resets during training)
+    env = step_limit.StepLimitWrapper(env, step_limit=12_000_000)
+    # Add fake episode boundaries to chunk continuous episode into trajectories
+    env = FakeEpisodeBoundaryWrapper(
+        env, steps_per_chunk=chunk_steps, env_label=env_name)
+  # Preserve the effective replay/evaluation chunk length for downstream config.
+  env._step_limit = chunk_steps
   env = ObservationFilterWrapper(env, indices)
   wall_key = _point_maze_wall_key(env_name)
   if wall_key is not None and wall_key in point_env.WALLS:
