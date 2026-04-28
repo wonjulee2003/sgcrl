@@ -61,7 +61,7 @@ for idx in "${!ENVS[@]}"; do
       SEED="${seed}" \
       NUM_STEPS="${NUM_STEPS}" \
       EXTRA_ARGS="${extra_args}" \
-        sbatch --job-name "${job_name}" "${SBATCH_SCRIPT}"
+        sbatch --export=ALL --job-name "${job_name}" "${SBATCH_SCRIPT}"
     done
   done
 done
