@@ -5,7 +5,6 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=8G
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=gpu40
 #SBATCH --time=5:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=wl2527@princeton.edu
