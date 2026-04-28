@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=sgcrl_non_epi
+#SBATCH --job-name=sgcrl_main
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -21,7 +21,7 @@ fi
 
 BASE_DIR="${BASE_DIR:-/scratch/gpfs/EYSENBACH/wl2527}"
 CONDA_ENV="${CONDA_ENV:-${BASE_DIR}/conda_envs/sgcrl}"
-BRANCH_DIR="${BRANCH_DIR:-${BASE_DIR}/sgcrl-non-episodic}"
+BRANCH_DIR="${BRANCH_DIR:-${BASE_DIR}/sgcrl-main}"
 
 ENV_NAME="${ENV_NAME:-sawyer_box}"
 ALG="${ALG:-contrastive_cpc}"
@@ -62,4 +62,4 @@ python -u lp_contrastive.py \
   --num_steps "${NUM_STEPS}" \
   ${EXTRA_ARGS}
 
-exit 0  
+exit 0
