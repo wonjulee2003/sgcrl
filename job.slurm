@@ -9,7 +9,6 @@
 #SBATCH --time=5:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=wl2527@princeton.edu
-#SBATCH --account=eysenbach
 
 module purge
 module load anaconda3/2023.3
@@ -19,9 +18,10 @@ else
   echo "CUDA 11.3/cuDNN 8.2 modules unavailable; relying on conda env libraries."
 fi
 
-BASE_DIR="${BASE_DIR:-/scratch/gpfs/EYSENBACH/wl2527}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${BASE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 CONDA_ENV="${CONDA_ENV:-${BASE_DIR}/conda_envs/sgcrl}"
-BRANCH_DIR="${BRANCH_DIR:-${BASE_DIR}/sgcrl-non-episodic}"
+BRANCH_DIR="${BRANCH_DIR:-${SCRIPT_DIR}}"
 
 ENV_NAME="${ENV_NAME:-sawyer_box}"
 ALG="${ALG:-contrastive_cpc}"
