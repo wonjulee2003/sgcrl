@@ -11,7 +11,7 @@
 module purge
 module load anaconda3/2023.3
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 BASE_DIR="${BASE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 CONDA_ENV="${CONDA_ENV:-${BASE_DIR}/conda_envs/sgcrl}"
 BRANCH_DIR="${BRANCH_DIR:-${SCRIPT_DIR}}"

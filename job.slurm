@@ -17,7 +17,7 @@ else
   echo "CUDA 11.3/cuDNN 8.2 modules unavailable; relying on conda env libraries."
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 BASE_DIR="${BASE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 CONDA_ENV="${CONDA_ENV:-${BASE_DIR}/conda_envs/sgcrl}"
 BRANCH_DIR="${BRANCH_DIR:-${SCRIPT_DIR}}"
