@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=sgcrl_non_epi
+#SBATCH --job-name=sgcrl_gpu_check
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem-per-cpu=8G
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
 #SBATCH --gres=gpu:1
-#SBATCH --time=5:00:00
+#SBATCH --time=00:10:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=wl2527@princeton.edu
 
@@ -21,12 +21,6 @@ SCRIPT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 BASE_DIR="${BASE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 CONDA_ENV="${CONDA_ENV:-${BASE_DIR}/conda_envs/sgcrl}"
 BRANCH_DIR="${BRANCH_DIR:-${SCRIPT_DIR}}"
-
-ENV_NAME="${ENV_NAME:-sawyer_box}"
-ALG="${ALG:-contrastive_cpc}"
-SEED="${SEED:-99887766}"
-NUM_STEPS="${NUM_STEPS:-8000000}"
-EXTRA_ARGS="${EXTRA_ARGS:-}"
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
@@ -46,38 +40,11 @@ export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 
 echo "CONDA_PREFIX: $CONDA_PREFIX"
 echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
-echo "CUDA_HOME: $CUDA_HOME"
-echo "BRANCH_DIR: $BRANCH_DIR"
-echo "ENV_NAME: $ENV_NAME"
-echo "ALG: $ALG"
-echo "SEED: $SEED"
-echo "NUM_STEPS: $NUM_STEPS"
-echo "EXTRA_ARGS: $EXTRA_ARGS"
+echo "CUDA_HOME: ${CUDA_HOME:-<unset>}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "JAX_PLATFORM_NAME: ${JAX_PLATFORM_NAME:-<unset>}"
 echo "JAX_PLATFORMS: ${JAX_PLATFORMS:-<unset>}"
 nvidia-smi
 
-python - <<'PY'
-import jax
-
-backend = jax.default_backend()
-devices = jax.devices()
-print("JAX default backend:", backend, flush=True)
-print("JAX devices:", devices, flush=True)
-if backend not in ("gpu", "cuda") and not any(d.platform == "gpu" for d in devices):
-  raise RuntimeError(
-      "GPU Slurm job did not get a JAX GPU backend. Check that the conda env "
-      "has a CUDA-enabled jaxlib and that CUDA_VISIBLE_DEVICES is not empty.")
-PY
-
 cd "${BRANCH_DIR}" || exit 1
-
-python -u lp_contrastive.py \
-  --seed "${SEED}" \
-  --env "${ENV_NAME}" \
-  --alg "${ALG}" \
-  --num_steps "${NUM_STEPS}" \
-  ${EXTRA_ARGS}
-
-exit 0  
+python -u check_gpu_install.py
