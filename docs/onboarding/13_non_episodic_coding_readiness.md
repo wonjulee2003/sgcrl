@@ -21,8 +21,8 @@ So the branch is "non-episodic" at the environment/replay-boundary layer, not at
 1. `contrastive/utils.py`
    Core fake-boundary wrapper and modified environment construction.
 
-2. `env_utils.py`
-   Sawyer envs keep goals fixed after first setup and relax MetaWorld path limits.
+2. `env_utils.py` / `sawyer_envs.py`
+   `env_utils.py` lazily loads Sawyer envs only for Sawyer tasks; `sawyer_envs.py` keeps Sawyer goals fixed after first setup and relaxes MetaWorld path limits.
 
 3. `contrastive/builder.py`
    Replay still uses `EpisodeAdder`; stored episodes now mean continuous-rollout chunks.
@@ -39,9 +39,9 @@ So the branch is "non-episodic" at the environment/replay-boundary layer, not at
 3. `contrastive.utils.FakeEpisodeBoundaryWrapper.reset`
 4. `contrastive.utils.make_environment`
 5. `contrastive.utils.PointMazeTrajectorySnapshotWrapper`
-6. `env_utils.SawyerBin.reset`
-7. `env_utils.SawyerBox.reset`
-8. `env_utils.SawyerPeg.reset`
+6. `sawyer_envs.SawyerBin.reset`
+7. `sawyer_envs.SawyerBox.reset`
+8. `sawyer_envs.SawyerPeg.reset`
 9. `contrastive.builder.ContrastiveBuilder.make_replay_tables`
 10. `lp_contrastive.get_program`
 
@@ -87,13 +87,13 @@ Run these before making behavior changes:
 ```bash
 git status --branch --short
 git diff --name-status main...HEAD
-python -m py_compile contrastive/utils.py contrastive/builder.py env_utils.py lp_contrastive.py
+python -m py_compile contrastive/utils.py contrastive/builder.py env_utils.py sawyer_envs.py lp_contrastive.py
 ```
 
 Inspect branch-specific assumptions:
 
 ```bash
-rg -n "FakeEpisodeBoundaryWrapper|continuous-episode|_goal_set_once|12_000_000|StepType.LAST|StepType.FIRST" contrastive env_utils.py lp_contrastive.py
+rg -n "FakeEpisodeBoundaryWrapper|continuous-episode|_goal_set_once|12_000_000|StepType.LAST|StepType.FIRST" contrastive env_utils.py sawyer_envs.py lp_contrastive.py
 ```
 
 Minimal wrapper sanity test to write/run before deeper edits:

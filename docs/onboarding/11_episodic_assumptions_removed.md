@@ -9,7 +9,7 @@ Diff commands used:
 
 ```bash
 git diff --name-status main...HEAD
-git diff main...HEAD -- contrastive/utils.py env_utils.py contrastive/builder.py lp_contrastive.py
+git diff main...HEAD -- contrastive/utils.py env_utils.py sawyer_envs.py contrastive/builder.py lp_contrastive.py
 ```
 
 Core finding: `contrastive/learning.py`, `contrastive/distributed_layout.py`, and `contrastive/agents.py` are unchanged in `main...HEAD`. The non-episodic change is mostly implemented by changing what the environment reports as episode boundaries.
@@ -25,7 +25,7 @@ Non-episodic behavior:
 
 - `contrastive/utils.py::make_environment` now uses `step_limit.StepLimitWrapper(env, step_limit=12_000_000)`.
 - Then it adds `FakeEpisodeBoundaryWrapper(env, steps_per_chunk=max_episode_steps)`.
-- Current refs: `contrastive/utils.py:356-393`, `env_utils.py:35-66`.
+- Current refs: `contrastive/utils.py:356-410`, `env_utils.py:13-47`.
 
 Why it matters:
 
@@ -46,7 +46,7 @@ Non-episodic behavior:
 - `FakeEpisodeBoundaryWrapper.reset()` calls the real underlying `env.reset()` only when `_needs_reset` is true.
 - Later resets return a synthetic `dm_env.TimeStep(step_type=FIRST, reward=0.0, discount=1.0, observation=self._last_observation)`.
 - Sawyer wrappers add `_goal_set_once` and only set goals on the first real reset.
-- Current refs: `contrastive/utils.py:305-333`, `env_utils.py:73-110`, `env_utils.py:152-188`, `env_utils.py:236-269`.
+- Current refs: `contrastive/utils.py:305-333`, `sawyer_envs.py:49-71`, `sawyer_envs.py:128-149`, `sawyer_envs.py:212-231`.
 
 Why it matters:
 
@@ -65,7 +65,7 @@ Non-episodic behavior:
 
 - `FakeEpisodeBoundaryWrapper.step()` changes the timestep to `dm_env.StepType.LAST` after `steps_per_chunk`.
 - It does not call the underlying reset when emitting this `LAST`.
-- Current refs: `contrastive/utils.py:335-353`, `env_utils.py:112-121`, `env_utils.py:190-203`, `env_utils.py:271-281`.
+- Current refs: `contrastive/utils.py:335-353`, `sawyer_envs.py:73-82`, `sawyer_envs.py:151-164`, `sawyer_envs.py:233-243`.
 
 Why it matters:
 

@@ -34,6 +34,7 @@ contrastive/builder.py    modified
 contrastive/networks.py   modified
 contrastive/utils.py      modified
 env_utils.py              modified
+sawyer_envs.py            added
 job.slurm                 added
 lp_contrastive.py         modified
 run_psi_sim.sh            added
@@ -45,7 +46,8 @@ training_videos/.DS_Store deleted metadata
 High-signal source changes:
 
 - `contrastive/utils.py`: adds `FakeEpisodeBoundaryWrapper` and changes `make_environment()` to use continuous simulator rollouts with fake replay chunk boundaries.
-- `env_utils.py`: changes Sawyer goal/reset behavior to support long physical episodes.
+- `env_utils.py`: lazily loads Sawyer wrappers only for Sawyer tasks, avoiding MetaWorld imports on point-maze jobs.
+- `sawyer_envs.py`: changes Sawyer goal/reset behavior to support long physical episodes.
 - `contrastive/builder.py`: keeps episode-based replay, but interprets stored episodes as chunks of one continuous rollout.
 - `lp_contrastive.py`: adds non-episodic messaging, point-maze snapshot flags, and more fixed point-maze goals.
 - `tabular_SGCRL.py`: new standalone tabular experiment with optional continuous-episode collection.
@@ -66,6 +68,7 @@ This strongly suggests the neural SGCRL non-episodic behavior is implemented at 
 | `job.slurm` | Cluster launch script for `lp_contrastive.py`, currently targeting `sawyer_box`. |
 | `run_psi_sim.sh` | Script for posterior/similarity diagnostics through `experiments.similarity_posterior_exp`; not part of the main SGCRL training path in the inspected baseline. |
 | `run_tabular.sh` | Hyperparameter launcher for `tabular_SGCRL.py`; passes `--continuous-episode True`. |
+| `sawyer_envs.py` | MetaWorld-backed Sawyer wrappers, split out so point-maze imports do not trigger MuJoCo compilation. |
 | `tabular_SGCRL.py` | Standalone tabular SGCRL maze implementation with tabular `phi`/`psi`, replay, plotting, and optional continuous rollouts. |
 
 Docs note:
@@ -90,7 +93,7 @@ Using direct `main..HEAD`, the main-branch onboarding docs also appear deleted b
 | `contrastive/builder.py` | Replay table buffer guard and comments clarifying chunked continuous episodes. |
 | `contrastive/networks.py` | Adds unused `config=None` compatibility argument to `make_networks()`. |
 | `contrastive/utils.py` | Core non-episodic wrapper logic and point-maze trajectory snapshot wrapper. |
-| `env_utils.py` | Sawyer wrappers keep goals fixed after first reset and relax path length limits. |
+| `env_utils.py` | Loader logic for point and Sawyer environments; Sawyer wrappers are imported lazily. |
 | `lp_contrastive.py` | Runtime flags/messages and additional fixed point-maze goals. |
 
 ## Important Modified Files
@@ -132,9 +135,11 @@ Why it relates to non-episodic training:
 - The physical/simulator state is not reset at each replay trajectory boundary.
 - Replay episodes become fixed-length chunks of one long continuous rollout.
 
-### `env_utils.py`
+### `env_utils.py` and `sawyer_envs.py`
 Structural changes:
 
+- `env_utils.py` no longer imports MetaWorld at module import time.
+- Sawyer wrappers moved to `sawyer_envs.py` and are imported only inside the `sawyer_*` branches of `env_utils.load()`.
 - `SawyerBin.__init__`, `SawyerBox.__init__`, and `SawyerPeg.__init__` add `_goal_set_once`.
 - These wrappers set `max_path_length` and `_max_path_length`, when present, to `10**9`.
 - Their `reset()` methods still call `super().reset()`, but goal sampling/assignment now happens only if `_goal_set_once` is false.
@@ -150,6 +155,7 @@ Why it relates to non-episodic training:
 - Prevents goal resampling at fake boundaries or long-running rollouts.
 - Large MetaWorld path lengths avoid internal environment truncation during continuous physics.
 - Keeps the target stable while the simulator is intended to continue over many replay chunks.
+- Keeps point-maze CPU jobs from importing MetaWorld/MuJoCo and compiling `mujoco_py`.
 
 Open nuance:
 
@@ -230,10 +236,10 @@ Why it relates to non-episodic training:
 | `contrastive/utils.py::FakeEpisodeBoundaryWrapper` | Did not exist. | Emits fake `LAST` every chunk and fake `FIRST` on next reset while preserving underlying simulator state. | Core mechanism for non-episodic rollouts while keeping Acme/Reverb episode APIs. |
 | `contrastive/builder.py::make_adder` | `EpisodeAdder(max_sequence_length=config.max_episode_steps + 1)` stores finite episodes. | Same API, but input "episodes" are fake chunks of a continuous rollout. | Avoids rewriting learner/replay code. |
 | `contrastive/builder.py::make_dataset_iterator` | Samples future goals within each stored trajectory. | Same logic. Stored trajectories are continuous chunks, not true environment episodes. | Future-state relabeling now happens within artificial chunks. |
-| `env_utils.py::SawyerBin.reset` | Recomputes goal on reset. | Sets goal only once via `_goal_set_once`. | Avoids goal changes across long-running training rollouts. |
-| `env_utils.py::SawyerBox.reset` | Recomputes goal/quat on reset. | Sets goal/quat only once via `_goal_set_once`. | Keeps Sawyer box target stable across continuous chunks. |
-| `env_utils.py::SawyerPeg.reset` | Recomputes goal on reset. | Sets goal only once via `_goal_set_once`. | Keeps Sawyer peg target stable across continuous chunks. |
-| `env_utils.py::Sawyer*.__init__` | Uses default MetaWorld path length behavior. | Sets path length fields to `10**9`. | Reduces chance of MetaWorld internal truncation. |
+| `sawyer_envs.py::SawyerBin.reset` | Recomputes goal on reset. | Sets goal only once via `_goal_set_once`. | Avoids goal changes across long-running training rollouts. |
+| `sawyer_envs.py::SawyerBox.reset` | Recomputes goal/quat on reset. | Sets goal/quat only once via `_goal_set_once`. | Keeps Sawyer box target stable across continuous chunks. |
+| `sawyer_envs.py::SawyerPeg.reset` | Recomputes goal on reset. | Sets goal only once via `_goal_set_once`. | Keeps Sawyer peg target stable across continuous chunks. |
+| `sawyer_envs.py::Sawyer*.__init__` | Uses default MetaWorld path length behavior. | Sets path length fields to `10**9`. | Reduces chance of MetaWorld internal truncation. |
 | `lp_contrastive.py::main` | Launches normal SGCRL without explicit continuous-episode message. | Prints non-episodic physics message and configures maze trajectory snapshots. | Makes runtime mode visible and adds diagnostics. |
 | `contrastive/networks.py::make_networks` | Does not accept `config`. | Accepts unused `config=None`. | Compatibility only; no apparent algorithm change. |
 | `contrastive/learning.py` | Actor/critic losses and gradient update path. | Unchanged in `main...HEAD`. | Non-episodic behavior is not implemented in the learner losses. |
